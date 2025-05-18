@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/detection_model.dart';
+import '../utils/image_utils.dart';
 
 class BoundingBoxSelector extends StatefulWidget {
   final String imagePath;
@@ -36,13 +37,35 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
   // Image dimensions
   double _imageWidth = 0;
   double _imageHeight = 0;
-
   @override
   void initState() {
     super.initState();
     // Initialize with the first detection if available
     if (widget.detections.isNotEmpty) {
-      _currentBoundingBox = widget.detections.first.boundingBox;
+      _initializeBoundingBox();
+    }
+  }
+
+  Future<void> _initializeBoundingBox() async {
+    // Get the original bounding box
+    final originalBox = widget.detections.first.boundingBox;
+
+    // Check if the coordinates might be in pixels rather than normalized
+    if (originalBox.x2 > 1000 || originalBox.y2 > 1000) {
+      // Convert from pixel coordinates to 0-1000 range
+      final normalizedBox = await ImageUtils.convertToNormalizedBoundingBox(
+          widget.imagePath, originalBox);
+      if (mounted) {
+        setState(() {
+          _currentBoundingBox = normalizedBox;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _currentBoundingBox = originalBox;
+        });
+      }
     }
   }
 
@@ -63,7 +86,10 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
                 width: double.infinity,
                 height: double.infinity,
                 frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                  _updateImageDimensions(context);
+                  // Only update dimensions once when image is fully loaded
+                  if (frame != null && _imageWidth == 0 && _imageHeight == 0) {
+                    _updateImageDimensions(context);
+                  }
                   return child;
                 },
               ),
@@ -93,22 +119,31 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
 
   void _updateImageDimensions(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final RenderBox renderBox = context.findRenderObject() as RenderBox;
+      if (!mounted) return;
+
+      final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+      if (renderBox == null) return;
+
       final size = renderBox.size;
 
-      setState(() {
-        _imageWidth = size.width;
-        _imageHeight = size.height;
-      });
+      // Only update dimensions if they've changed
+      if (size.width != _imageWidth || size.height != _imageHeight) {
+        setState(() {
+          _imageWidth = size.width;
+          _imageHeight = size.height;
+        });
+      }
     });
   }
 
   Widget _buildBoundingBoxOverlay() {
-    if (_currentBoundingBox == null) return Container();
+    if (_currentBoundingBox == null) {
+      return Container();
+    }
 
     final box = _currentBoundingBox!;
 
-    // Calculate positions as ratios of the container
+    // Use the API coordinates directly (0-1000 range)
     final double left = box.x1.toDouble();
     final double top = box.y1.toDouble();
     final double width = (box.x2 - box.x1).toDouble();
@@ -131,9 +166,7 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
               color: Colors.black.withOpacity(0.5),
             ),
           ),
-        ),
-
-        // Bounding box outline
+        ), // Bounding box outline - convert from API coordinates (0-1000) to screen pixels
         Positioned(
           left: left * _imageWidth / 1000,
           top: top * _imageHeight / 1000,
@@ -142,8 +175,8 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
           child: Container(
             decoration: BoxDecoration(
               border: Border.all(
-                color: Colors.blue,
-                width: 2,
+                color: Colors.red,
+                width: 3,
               ),
             ),
             // Show handlers when editing
@@ -167,11 +200,12 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
     return Align(
       alignment: alignment,
       child: Container(
-        width: 20,
-        height: 20,
+        width: 24, // Handle size in screen pixels - slightly larger
+        height: 24,
         decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.5),
+          color: Colors.red.withOpacity(0.7),
           shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
         ),
       ),
     );
@@ -187,30 +221,38 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
     _originalBox = currentBox;
     _dragStartOffset = localOffset;
 
-    final double left = currentBox.x1 * _imageWidth / 1000;
-    final double top = currentBox.y1 * _imageHeight / 1000;
-    final double width = (currentBox.x2 - currentBox.x1) * _imageWidth / 1000;
-    final double height = (currentBox.y2 - currentBox.y1) * _imageHeight / 1000;
+    // Convert touch position to API coordinates (0-1000 range)
+    final double touchX = localOffset.dx * 1000 / _imageWidth;
+    final double touchY = localOffset.dy * 1000 / _imageHeight;
+
+    // Use API coordinates directly
+    final double left = currentBox.x1.toDouble();
+    final double top = currentBox.y1.toDouble();
+    final double width = (currentBox.x2 - currentBox.x1).toDouble();
+    final double height = (currentBox.y2 - currentBox.y1).toDouble();
 
     // Check if user is dragging a resize handle
+    // Define handle range in normalized coordinates
     const double handleRange = 30.0;
+    // Convert handle range to API coordinates
+    final double scaledHandleRange = handleRange * 1000 / _imageWidth;
 
-    if ((localOffset.dx - left).abs() < handleRange &&
-        (localOffset.dy - top).abs() < handleRange) {
+    if ((touchX - left).abs() < scaledHandleRange &&
+        (touchY - top).abs() < scaledHandleRange) {
       _isDraggingTopLeft = true;
-    } else if ((localOffset.dx - (left + width)).abs() < handleRange &&
-        (localOffset.dy - top).abs() < handleRange) {
+    } else if ((touchX - (left + width)).abs() < scaledHandleRange &&
+        (touchY - top).abs() < scaledHandleRange) {
       _isDraggingTopRight = true;
-    } else if ((localOffset.dx - left).abs() < handleRange &&
-        (localOffset.dy - (top + height)).abs() < handleRange) {
+    } else if ((touchX - left).abs() < scaledHandleRange &&
+        (touchY - (top + height)).abs() < scaledHandleRange) {
       _isDraggingBottomLeft = true;
-    } else if ((localOffset.dx - (left + width)).abs() < handleRange &&
-        (localOffset.dy - (top + height)).abs() < handleRange) {
+    } else if ((touchX - (left + width)).abs() < scaledHandleRange &&
+        (touchY - (top + height)).abs() < scaledHandleRange) {
       _isDraggingBottomRight = true;
-    } else if (localOffset.dx >= left &&
-        localOffset.dx <= left + width &&
-        localOffset.dy >= top &&
-        localOffset.dy <= top + height) {
+    } else if (touchX >= left &&
+        touchX <= left + width &&
+        touchY >= top &&
+        touchY <= top + height) {
       _isDraggingBox = true;
     }
   }
@@ -226,11 +268,11 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
     final RenderBox box = context.findRenderObject() as RenderBox;
     final Offset localOffset = box.globalToLocal(details.globalPosition);
 
-    // Calculate delta from start position
+    // Calculate delta from start position in screen pixels
     final double dx = localOffset.dx - _dragStartOffset.dx;
     final double dy = localOffset.dy - _dragStartOffset.dy;
 
-    // Scale to image coordinates (0-1000 range for API)
+    // Convert pixel movement to API coordinates (0-1000 range)
     final double scaledDx = dx * 1000 / _imageWidth;
     final double scaledDy = dy * 1000 / _imageHeight;
 
@@ -303,6 +345,7 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
 }
 
 class BoundingBoxClipper extends CustomClipper<Path> {
+  // These values are in API coordinates (0-1000 range)
   final double left;
   final double top;
   final double width;
@@ -321,6 +364,7 @@ class BoundingBoxClipper extends CustomClipper<Path> {
 
   @override
   Path getClip(Size size) {
+    // Convert API coordinates (0-1000) to screen pixels for drawing
     final scaledLeft = left * imageWidth / 1000;
     final scaledTop = top * imageHeight / 1000;
     final scaledWidth = width * imageWidth / 1000;

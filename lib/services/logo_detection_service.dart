@@ -5,7 +5,7 @@ import '../models/detection_model.dart';
 
 class LogoDetectionService {
   static const String apiUrl =
-      'https://vihangams-yolo-logo-detect.hf.space/detect';
+      'https://vectifyfastapi-production.up.railway.app/detect';
 
   /// Sends an image file to the API for logo detection
   /// Returns a DetectionResponse object
