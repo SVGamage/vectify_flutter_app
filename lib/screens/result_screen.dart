@@ -23,6 +23,7 @@ class _ResultScreenState extends State<ResultScreen> {
   bool _showCroppedImage = false;
   String? _croppedImagePath;
   bool _isLoading = false;
+  bool _isManualSelection = false;
 
   @override
   void initState() {
@@ -30,6 +31,16 @@ class _ResultScreenState extends State<ResultScreen> {
     // Initialize with the first detection's bounding box
     if (widget.detections.isNotEmpty) {
       _currentBoundingBox = widget.detections.first.boundingBox;
+
+      // If this is a manual selection, set the flag
+      if (widget.detections.first.className == 'Manual Selection') {
+        _isManualSelection = true;
+
+        // Show help dialog after widget is built
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _showInitialHelp();
+        });
+      }
     }
   }
 
@@ -37,8 +48,20 @@ class _ResultScreenState extends State<ResultScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Logo Detection Result'),
+        title: Text(
+          _isManualSelection
+              ? 'Manual Logo Selection'
+              : 'Logo Detection Result',
+        ),
         actions: [
+          if (_isManualSelection && !_showCroppedImage)
+            Tooltip(
+              message: 'Adjust the red box to select your logo',
+              child: IconButton(
+                icon: const Icon(Icons.help_outline),
+                onPressed: _showHelpDialog,
+              ),
+            ),
           if (!_showCroppedImage)
             IconButton(
               icon: const Icon(Icons.crop),
@@ -69,6 +92,7 @@ class _ResultScreenState extends State<ResultScreen> {
                       : BoundingBoxSelector(
                           imagePath: widget.imagePath,
                           detections: widget.detections,
+                          initialEditingMode: _isManualSelection,
                           onBoundingBoxChanged: (box) {
                             setState(() {
                               _currentBoundingBox = box;
@@ -112,6 +136,7 @@ class _ResultScreenState extends State<ResultScreen> {
 
   Widget _buildInfoPanel() {
     final detection = widget.detections.first;
+    final bool isManual = detection.className == 'Manual Selection';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -121,17 +146,45 @@ class _ResultScreenState extends State<ResultScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Detected: ${detection.className}',
+            isManual
+                ? 'Manual Selection Mode'
+                : 'Detected: ${detection.className}',
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Confidence: ${(detection.confidence * 100).toStringAsFixed(2)}%',
-            style: const TextStyle(fontSize: 16),
-          ),
+          if (!isManual)
+            Text(
+              'Confidence: ${(detection.confidence * 100).toStringAsFixed(2)}%',
+              style: const TextStyle(fontSize: 16),
+            ),
+          if (isManual)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Position the red box around the logo',
+                  style: TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.edit, size: 16, color: Colors.blue[700]),
+                    const SizedBox(width: 4),
+                    const Text('Use the Edit Box button to make adjustments'),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Icon(Icons.crop, size: 16, color: Colors.blue[700]),
+                    const SizedBox(width: 4),
+                    const Text('Tap Crop when done to see the result'),
+                  ],
+                ),
+              ],
+            ),
           const SizedBox(height: 8),
           if (_showCroppedImage && _croppedImagePath != null)
             Text(
@@ -141,22 +194,7 @@ class _ResultScreenState extends State<ResultScreen> {
                 color: Colors.green,
                 fontWeight: FontWeight.bold,
               ),
-            )
-          else
-            Text(
-              'Bounding Box: (${_currentBoundingBox.x1}, ${_currentBoundingBox.y1}) - (${_currentBoundingBox.x2}, ${_currentBoundingBox.y2})',
-              style: const TextStyle(fontSize: 14),
             ),
-          const SizedBox(height: 16),
-          Text(
-            _showCroppedImage
-                ? 'Tap "Save" to proceed or "Edit Crop" to adjust the selection.'
-                : 'You can adjust the bounding box by tapping the "Edit Box" button.',
-            style: const TextStyle(
-              fontSize: 14,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
         ],
       ),
     );
@@ -229,5 +267,50 @@ class _ResultScreenState extends State<ResultScreen> {
 
     // Return to previous screen with the cropped image path
     Navigator.pop(context, _croppedImagePath);
+  }
+
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Manual Selection Help'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'How to Select a Logo:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text('1. The red box shows your current selection'),
+            Text('2. Tap "Edit Box" to enable editing mode'),
+            Text('3. Drag the corners to resize the selection'),
+            Text('4. Drag inside the box to move the entire selection'),
+            Text('5. When finished, tap "Done" in the box'),
+            Text('6. Tap the crop icon in the app bar to confirm'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showInitialHelp() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Adjust the red box to select your logo area'),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Help',
+          onPressed: _showHelpDialog,
+        ),
+      ),
+    );
   }
 }

@@ -7,12 +7,14 @@ class BoundingBoxSelector extends StatefulWidget {
   final String imagePath;
   final List<Detection> detections;
   final Function(BoundingBox) onBoundingBoxChanged;
+  final bool initialEditingMode;
 
   const BoundingBoxSelector({
     super.key,
     required this.imagePath,
     required this.detections,
     required this.onBoundingBoxChanged,
+    this.initialEditingMode = false,
   });
 
   @override
@@ -40,6 +42,9 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
   @override
   void initState() {
     super.initState();
+    // Set initial editing mode
+    _isEditing = widget.initialEditingMode;
+
     // Initialize with the first detection if available
     if (widget.detections.isNotEmpty) {
       _initializeBoundingBox();
@@ -110,6 +115,39 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
                   child: Text(_isEditing ? 'Done' : 'Edit Box'),
                 ),
               ),
+
+              // Instructions for manual editing (when in edit mode)
+              if (_isEditing)
+                Positioned(
+                  bottom: 20,
+                  left: 20,
+                  right: 20,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Adjust Logo Selection',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          '• Drag the corners to resize\n• Drag the box to reposition\n• Tap "Done" when finished',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         );
@@ -263,7 +301,9 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
         _isDraggingTopRight ||
         _isDraggingBottomLeft ||
         _isDraggingBottomRight ||
-        _isDraggingBox)) return;
+        _isDraggingBox)) {
+      return;
+    }
 
     final RenderBox box = context.findRenderObject() as RenderBox;
     final Offset localOffset = box.globalToLocal(details.globalPosition);

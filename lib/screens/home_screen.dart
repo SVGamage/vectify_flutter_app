@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/logo_detection_service.dart';
+import '../models/detection_model.dart';
 import 'result_screen.dart';
+import '../utils/image_utils.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -190,7 +192,12 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
       } else {
-        _showErrorDialog('No logos detected in the image.');
+        // No logo detected - show manual selection dialog
+        if (response.success) {
+          _showNoLogoDetectedDialog();
+        } else {
+          _showManualSelectionDialog();
+        }
       }
     } catch (e) {
       setState(() {
@@ -205,15 +212,132 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Error'),
-        content: Text(message),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            const SizedBox(height: 16),
+            const Text(
+              'Would you like to manually select a logo area instead?',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToManualSelection();
+            },
+            child: const Text('Select Manually'),
           ),
         ],
       ),
     );
+  }
+
+  void _showManualSelectionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('No Logo Detected'),
+        content: const Text(
+            'No logos were automatically detected in the image. Would you like to manually select a logo area?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToManualSelection();
+            },
+            child: const Text('Select Manually'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNoLogoDetectedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('No Logo Detected'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('No logos were automatically detected in the image.'),
+            const SizedBox(height: 16),
+            const Text('Possible reasons:'),
+            const SizedBox(height: 8),
+            const Text('• The logo is too small or low contrast'),
+            const Text('• The image quality is not sufficient'),
+            const Text('• The logo design is not recognizable by our system'),
+            const SizedBox(height: 16),
+            const Text('Would you like to manually select a logo area?'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToManualSelection();
+            },
+            child: const Text('Select Manually'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _navigateToManualSelection() async {
+    if (_selectedImage == null) return;
+
+    try {
+      // Use the utility method to create a default bounding box
+      BoundingBox defaultBox =
+          await ImageUtils.createDefaultBoundingBox(_selectedImage!.path);
+
+      // Create a single detection with the default box
+      Detection manualDetection = Detection(
+        boundingBox: defaultBox,
+        classId: 0,
+        className: 'Manual Selection',
+        confidence: 1.0,
+      );
+
+      // Navigate to result screen with the manual detection
+      final croppedImagePath = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ResultScreen(
+            imagePath: _selectedImage!.path,
+            detections: [manualDetection],
+          ),
+        ),
+      );
+
+      // Show the cropped image if available
+      if (croppedImagePath != null && croppedImagePath is String && mounted) {
+        _showCroppedImage(croppedImagePath);
+      }
+    } catch (e) {
+      _showErrorDialog('Error preparing manual selection: $e');
+    }
   }
 
   void _showCroppedImage(String imagePath) {

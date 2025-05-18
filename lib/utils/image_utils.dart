@@ -83,18 +83,20 @@ class ImageUtils {
       );
 
       // Make sure x2 > x1 and y2 > y1
-      if (validBox.x2 <= validBox.x1)
+      if (validBox.x2 <= validBox.x1) {
         validBox = BoundingBox(
             x1: validBox.x1,
             y1: validBox.y1,
             x2: (validBox.x1 + 10).clamp(0, 1000),
             y2: validBox.y2);
-      if (validBox.y2 <= validBox.y1)
+      }
+      if (validBox.y2 <= validBox.y1) {
         validBox = BoundingBox(
             x1: validBox.x1,
             y1: validBox.y1,
             x2: validBox.x2,
             y2: (validBox.y1 + 10).clamp(0, 1000));
+      }
 
       // Convert normalized coordinates (0-1000) to actual pixel positions
       final int x = (validBox.x1 * image.width / 1000).round();
@@ -144,6 +146,43 @@ class ImageUtils {
       return croppedFile.path;
     } catch (e) {
       throw Exception('Error cropping image: $e');
+    }
+  }
+
+  /// Creates a default centered bounding box for manual selection
+  /// The box will be centered with 50% of the image size
+  static Future<BoundingBox> createDefaultBoundingBox(String imagePath) async {
+    try {
+      // Get image dimensions
+      final File imageFile = File(imagePath);
+      final ui.Image? image = await _getImageDimensions(imageFile);
+
+      if (image == null) {
+        // Return a default box if we can't get image dimensions
+        return BoundingBox(
+          x1: 250, // 25% from left
+          y1: 250, // 25% from top
+          x2: 750, // 75% from left
+          y2: 750, // 75% from top
+        );
+      }
+
+      // Create a box that's centered and covers 50% of the image
+      // Using normalized coordinates (0-1000 range)
+      return BoundingBox(
+        x1: 250, // 25% from left
+        y1: 250, // 25% from top
+        x2: 750, // 75% from left
+        y2: 750, // 75% from top
+      );
+    } catch (e) {
+      // Return a default box if there's an error
+      return BoundingBox(
+        x1: 250,
+        y1: 250,
+        x2: 750,
+        y2: 750,
+      );
     }
   }
 }
