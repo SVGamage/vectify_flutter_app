@@ -1,7 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/detection_model.dart';
 import '../widgets/bounding_box_selector.dart';
-import 'crop_screen.dart';
+import '../utils/image_utils.dart';
 
 class ResultScreen extends StatefulWidget {
   final String imagePath;
@@ -19,6 +20,9 @@ class ResultScreen extends StatefulWidget {
 
 class _ResultScreenState extends State<ResultScreen> {
   late BoundingBox _currentBoundingBox;
+  bool _showCroppedImage = false;
+  String? _croppedImagePath;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -35,29 +39,74 @@ class _ResultScreenState extends State<ResultScreen> {
       appBar: AppBar(
         title: const Text('Logo Detection Result'),
         actions: [
+          if (!_showCroppedImage)
+            IconButton(
+              icon: const Icon(Icons.crop),
+              onPressed: _cropImage,
+              tooltip: 'Crop Image',
+            ),
+          if (_showCroppedImage)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () => setState(() => _showCroppedImage = false),
+              tooltip: 'Edit Crop',
+            ),
           IconButton(
             icon: const Icon(Icons.check),
-            onPressed: _saveAndProceed,
-            tooltip: 'Save and Proceed',
+            onPressed: _showCroppedImage ? _saveAndProceed : _cropImage,
+            tooltip:
+                _showCroppedImage ? 'Save and Proceed' : 'Crop and Preview',
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: BoundingBoxSelector(
-              imagePath: widget.imagePath,
-              detections: widget.detections,
-              onBoundingBoxChanged: (box) {
-                setState(() {
-                  _currentBoundingBox = box;
-                });
-              },
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Expanded(
+                  child: _showCroppedImage
+                      ? _buildCroppedImageView()
+                      : BoundingBoxSelector(
+                          imagePath: widget.imagePath,
+                          detections: widget.detections,
+                          onBoundingBoxChanged: (box) {
+                            setState(() {
+                              _currentBoundingBox = box;
+                              // Reset cropped image when box changes
+                              if (_croppedImagePath != null) {
+                                _croppedImagePath = null;
+                                _showCroppedImage = false;
+                              }
+                            });
+                          },
+                        ),
+                ),
+                _buildInfoPanel(),
+              ],
             ),
+    );
+  }
+
+  Widget _buildCroppedImageView() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (_croppedImagePath != null)
+          Image.file(
+            File(_croppedImagePath!),
+            fit: BoxFit.contain,
           ),
-          _buildInfoPanel(),
-        ],
-      ),
+        Positioned(
+          bottom: 16,
+          right: 16,
+          child: FloatingActionButton(
+            heroTag: 'adjust_crop',
+            onPressed: () => setState(() => _showCroppedImage = false),
+            child: const Icon(Icons.edit),
+            backgroundColor: Colors.blue.withOpacity(0.7),
+          ),
+        ),
+      ],
     );
   }
 
@@ -84,14 +133,26 @@ class _ResultScreenState extends State<ResultScreen> {
             style: const TextStyle(fontSize: 16),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Bounding Box: (${_currentBoundingBox.x1}, ${_currentBoundingBox.y1}) - (${_currentBoundingBox.x2}, ${_currentBoundingBox.y2})',
-            style: const TextStyle(fontSize: 14),
-          ),
+          if (_showCroppedImage && _croppedImagePath != null)
+            Text(
+              'Image cropped successfully',
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.green,
+                fontWeight: FontWeight.bold,
+              ),
+            )
+          else
+            Text(
+              'Bounding Box: (${_currentBoundingBox.x1}, ${_currentBoundingBox.y1}) - (${_currentBoundingBox.x2}, ${_currentBoundingBox.y2})',
+              style: const TextStyle(fontSize: 14),
+            ),
           const SizedBox(height: 16),
-          const Text(
-            'You can adjust the bounding box by tapping the "Edit Box" button.',
-            style: TextStyle(
+          Text(
+            _showCroppedImage
+                ? 'Tap "Save" to proceed or "Edit Crop" to adjust the selection.'
+                : 'You can adjust the bounding box by tapping the "Edit Box" button.',
+            style: const TextStyle(
               fontSize: 14,
               fontStyle: FontStyle.italic,
             ),
@@ -101,28 +162,72 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 
-  void _saveAndProceed() async {
-    // Navigate to crop screen with the selected bounding box
-    final croppedImagePath = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CropScreen(
-          imagePath: widget.imagePath,
-          boundingBox: _currentBoundingBox,
-        ),
-      ),
-    );
+  Future<void> _cropImage() async {
+    if (_isLoading) return;
 
-    if (croppedImagePath != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Image cropped successfully!'),
-          backgroundColor: Colors.green,
-        ),
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // First ensure the bounding box is properly normalized
+      // This ensures we get consistent results whether we edit or not
+      final normalizedBox = await ImageUtils.convertToNormalizedBoundingBox(
+        widget.imagePath,
+        _currentBoundingBox,
       );
 
-      // Return to previous screen with the cropped image path
-      Navigator.pop(context, croppedImagePath);
+      // Update the current bounding box to the normalized one
+      setState(() {
+        _currentBoundingBox = normalizedBox;
+      });
+
+      // Automatically crop the image using the normalized bounding box
+      final croppedPath = await ImageUtils.cropImageWithBoundingBox(
+        widget.imagePath,
+        normalizedBox,
+      );
+
+      if (mounted) {
+        setState(() {
+          _croppedImagePath = croppedPath;
+          _showCroppedImage = true;
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Image cropped successfully! You can adjust if needed.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to crop image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
+  }
+
+  void _saveAndProceed() async {
+    if (_croppedImagePath == null) {
+      // If no cropped image yet, crop first
+      await _cropImage();
+      if (_croppedImagePath == null) return; // Cropping failed
+    }
+
+    // Return to previous screen with the cropped image path
+    Navigator.pop(context, _croppedImagePath);
   }
 }
