@@ -20,7 +20,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Logo Detector'),
+        title: const Text(
+          'Vectify',
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue,
+          ),
+          textAlign: TextAlign.center,
+        ),
         centerTitle: true,
       ),
       body: Container(
@@ -29,19 +37,19 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text(
-              'Vectify Logo Detection',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue,
-              ),
-              textAlign: TextAlign.center,
-            ),
             const SizedBox(height: 30),
             const Text(
-              'Take or select a photo to detect logos',
+              'Tap a button below to capture or select a photo',
               style: TextStyle(fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Processing will start automatically',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 40),
@@ -80,66 +88,46 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-              ),
-
-            // Buttons for camera and gallery
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _captureImage,
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Camera'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _pickImage,
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text('Gallery'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 20),
-
-            // Process button
-            ElevatedButton(
-              onPressed: (_selectedImage != null && !_isLoading)
-                  ? _processImage
-                  : null,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-              child: _isLoading
-                  ? const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              ), // Buttons for camera and gallery or loading indicator
+            _isLoading
+                ? const Center(
+                    child: Column(
                       children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Processing image...',
+                            style: TextStyle(fontSize: 16)),
+                      ],
+                    ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _captureImage,
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Camera'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                         ),
-                        SizedBox(width: 10),
-                        Text('Processing...'),
-                      ],
-                    )
-                  : const Text('Process Image'),
-            ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _pickImage,
+                          icon: const Icon(Icons.photo_library),
+                          label: const Text('Gallery'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -156,11 +144,15 @@ class _HomeScreenState extends State<HomeScreen> {
     _processPickedImage(image);
   }
 
-  void _processPickedImage(XFile? image) {
+  void _processPickedImage(XFile? image) async {
     if (image != null) {
+      // Set the selected image
       setState(() {
         _selectedImage = File(image.path);
       });
+
+      // Automatically process the image
+      await _processImage();
     }
   }
 

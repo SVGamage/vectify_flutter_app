@@ -43,9 +43,11 @@ dependencies:
   # For file handling operations
   path_provider: ^2.1.2
   path: ^1.9.0
-
   # For handling image cropping or selection
   crop_image: ^1.0.12
+
+  # For image processing
+  image: ^4.1.7
 
 dev_dependencies:
   flutter_test:
