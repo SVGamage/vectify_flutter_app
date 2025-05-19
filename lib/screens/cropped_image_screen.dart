@@ -24,13 +24,10 @@ class CroppedImageScreen extends StatefulWidget {
 class _CroppedImageScreenState extends State<CroppedImageScreen> {
   bool _isLoading = false;
   bool _isVectorizing = false;
-  late BoundingBox _currentBoundingBox;
   String? _currentCroppedImagePath;
-
   @override
   void initState() {
     super.initState();
-    _currentBoundingBox = widget.boundingBox;
     _currentCroppedImagePath = widget.croppedImagePath;
 
     // Show success message
@@ -65,6 +62,11 @@ class _CroppedImageScreenState extends State<CroppedImageScreen> {
             icon: const Icon(Icons.check),
             onPressed: _saveAndProceed,
             tooltip: 'Proceed',
+          ),
+          IconButton(
+            icon: const Icon(Icons.home),
+            onPressed: () => _navigateToHome(context),
+            tooltip: 'Go to Home',
           ),
         ],
       ),
@@ -174,6 +176,11 @@ class _CroppedImageScreenState extends State<CroppedImageScreen> {
       transitionType: TransitionType.slideRight,
       result: _currentCroppedImagePath,
     );
+  }
+
+  void _navigateToHome(BuildContext context) {
+    // Use the extension method for consistent home navigation
+    context.navigateToHome();
   }
 
   Future<void> _vectorizeImage() async {

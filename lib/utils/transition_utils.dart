@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/home_screen.dart';
 
 /// Custom page route for smooth transitions between screens
 class SmoothPageRoute<T> extends PageRouteBuilder<T> {
@@ -151,5 +152,45 @@ extension NavigatorExtension on BuildContext {
     dynamic result,
   }) {
     return Navigator.of(this).maybePop(result);
+  }
+
+  /// Navigates to the home screen, clearing the navigation stack
+  void navigateToHome() {
+    // First try to pop until first route
+    Navigator.of(this).popUntil((route) => route.isFirst);
+
+    // If we're not at the HomeScreen, push the HomeScreen
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        try {
+          // First check if we can safely pop the current route
+          if (Navigator.of(this).canPop()) {
+            Navigator.of(this).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => const HomeScreen(),
+                settings: const RouteSettings(name: 'home'),
+              ),
+            );
+          } else {
+            // If we're at the root and can't pop, just push a new route
+            Navigator.of(this).push(
+              MaterialPageRoute(
+                builder: (context) => const HomeScreen(),
+                settings: const RouteSettings(name: 'home'),
+              ),
+            );
+          }
+        } catch (e) {
+          // Last resort, try to directly create a new navigator with HomeScreen
+          Navigator.of(this).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (context) => const HomeScreen(),
+              settings: const RouteSettings(name: 'home'),
+            ),
+            (route) => false, // Remove all routes
+          );
+        }
+      }
+    });
   }
 }

@@ -61,6 +61,11 @@ class _VectorizedSvgScreenState extends State<VectorizedSvgScreen> {
             onPressed: _shareSvgFile,
             tooltip: 'Share SVG',
           ),
+          IconButton(
+            icon: const Icon(Icons.home),
+            onPressed: () => _navigateToHome(context),
+            tooltip: 'Go to Home',
+          ),
         ],
       ),
       body: _isSaving
@@ -294,5 +299,10 @@ class _VectorizedSvgScreenState extends State<VectorizedSvgScreen> {
         );
       }
     }
+  }
+
+  void _navigateToHome(BuildContext context) {
+    // Use the extension method for consistent home navigation
+    context.navigateToHome();
   }
 }

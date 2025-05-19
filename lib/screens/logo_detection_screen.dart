@@ -67,6 +67,11 @@ class _LogoDetectionScreenState extends State<LogoDetectionScreen> {
             onPressed: _cropImage,
             tooltip: 'Crop and Continue',
           ),
+          IconButton(
+            icon: const Icon(Icons.home),
+            onPressed: () => _navigateToHome(context),
+            tooltip: 'Go to Home',
+          ),
         ],
       ),
       body: _isLoading
@@ -237,6 +242,11 @@ class _LogoDetectionScreenState extends State<LogoDetectionScreen> {
         ],
       ),
     );
+  }
+
+  void _navigateToHome(BuildContext context) {
+    // Use the extension method for consistent home navigation
+    context.navigateToHome();
   }
 
   void _showInitialHelp() {
