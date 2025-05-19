@@ -50,6 +50,11 @@ class ImageUtils {
     );
   }
 
+  /// Public method to get image dimensions (width, height)
+  static Future<ui.Image?> getImageDimensions(File imageFile) async {
+    return await _getImageDimensions(imageFile);
+  }
+
   // Get the dimensions of an image
   static Future<ui.Image?> _getImageDimensions(File imageFile) async {
     try {

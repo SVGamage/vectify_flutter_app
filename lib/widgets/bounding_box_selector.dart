@@ -36,9 +36,13 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
   Offset _dragStartOffset = Offset.zero;
   late BoundingBox _originalBox;
 
-  // Image dimensions
+  // Widget display size
   double _imageWidth = 0;
   double _imageHeight = 0;
+  // Real image pixel size
+  int _realImageWidth = 0;
+  int _realImageHeight = 0;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +52,18 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
     // Initialize with the first detection if available
     if (widget.detections.isNotEmpty) {
       _initializeBoundingBox();
+    }
+    _fetchRealImageDimensions();
+  }
+
+  Future<void> _fetchRealImageDimensions() async {
+    final file = File(widget.imagePath);
+    final img = await ImageUtils.getImageDimensions(file);
+    if (img != null && mounted) {
+      setState(() {
+        _realImageWidth = img.width;
+        _realImageHeight = img.height;
+      });
     }
   }
 
@@ -174,94 +190,62 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
     });
   }
 
-  Widget _buildBoundingBoxOverlay() {
-    if (_currentBoundingBox == null) {
-      return Container();
+  // Helper to get the image's drawn area (offset and size) inside the widget
+  Rect _getImageDrawnRect() {
+    if (_imageWidth == 0 ||
+        _imageHeight == 0 ||
+        _realImageWidth == 0 ||
+        _realImageHeight == 0) {
+      return Rect.zero;
     }
+    final widgetAspect = _imageWidth / _imageHeight;
+    final imageAspect = _realImageWidth / _realImageHeight;
+    double drawWidth, drawHeight, dx, dy;
+    if (imageAspect > widgetAspect) {
+      // Image is wider than widget: fit width
+      drawWidth = _imageWidth;
+      drawHeight = _imageWidth / imageAspect;
+      dx = 0;
+      dy = (_imageHeight - drawHeight) / 2;
+    } else {
+      // Image is taller than widget: fit height
+      drawHeight = _imageHeight;
+      drawWidth = _imageHeight * imageAspect;
+      dx = (_imageWidth - drawWidth) / 2;
+      dy = 0;
+    }
+    return Rect.fromLTWH(dx, dy, drawWidth, drawHeight);
+  }
 
-    final box = _currentBoundingBox!;
+  // Map widget/touch coordinates to normalized image coordinates (0-1000)
+  Offset _widgetToNormalized(Offset localOffset) {
+    final rect = _getImageDrawnRect();
+    final dx = ((localOffset.dx - rect.left) / rect.width).clamp(0.0, 1.0);
+    final dy = ((localOffset.dy - rect.top) / rect.height).clamp(0.0, 1.0);
+    return Offset(dx * 1000, dy * 1000);
+  }
 
-    // Use the API coordinates directly (0-1000 range)
-    final double left = box.x1.toDouble();
-    final double top = box.y1.toDouble();
-    final double width = (box.x2 - box.x1).toDouble();
-    final double height = (box.y2 - box.y1).toDouble();
-
-    return Stack(
-      children: [
-        // Semi-transparent overlay
-        Positioned.fill(
-          child: ClipPath(
-            clipper: BoundingBoxClipper(
-              left: left,
-              top: top,
-              width: width,
-              height: height,
-              imageWidth: _imageWidth,
-              imageHeight: _imageHeight,
-            ),
-            child: Container(
-              color: Colors.black.withOpacity(0.5),
-            ),
-          ),
-        ), // Bounding box outline - convert from API coordinates (0-1000) to screen pixels
-        Positioned(
-          left: left * _imageWidth / 1000,
-          top: top * _imageHeight / 1000,
-          width: width * _imageWidth / 1000,
-          height: height * _imageHeight / 1000,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: Colors.red,
-                width: 3,
-              ),
-            ),
-            // Show handlers when editing
-            child: _isEditing
-                ? Stack(
-                    children: [
-                      _buildResizeHandle(Alignment.topLeft),
-                      _buildResizeHandle(Alignment.topRight),
-                      _buildResizeHandle(Alignment.bottomLeft),
-                      _buildResizeHandle(Alignment.bottomRight),
-                    ],
-                  )
-                : null,
-          ),
-        ),
-      ],
+  // Map normalized image coordinates (0-1000) to widget coordinates
+  Offset _normalizedToWidget(double x, double y) {
+    final rect = _getImageDrawnRect();
+    return Offset(
+      rect.left + (x / 1000) * rect.width,
+      rect.top + (y / 1000) * rect.height,
     );
   }
 
-  Widget _buildResizeHandle(Alignment alignment) {
-    return Align(
-      alignment: alignment,
-      child: Container(
-        width: 24, // Handle size in screen pixels - slightly larger
-        height: 24,
-        decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.7),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
-        ),
-      ),
-    );
-  }
-
+  // --- Update pan handlers to use new mapping ---
   void _handlePanDown(DragDownDetails details) {
     if (!_isEditing || _currentBoundingBox == null) return;
-
     final RenderBox box = context.findRenderObject() as RenderBox;
     final Offset localOffset = box.globalToLocal(details.globalPosition);
-
     final currentBox = _currentBoundingBox!;
     _originalBox = currentBox;
     _dragStartOffset = localOffset;
-
-    // Convert touch position to API coordinates (0-1000 range)
-    final double touchX = localOffset.dx * 1000 / _imageWidth;
-    final double touchY = localOffset.dy * 1000 / _imageHeight;
+    // Convert touch position to normalized coordinates (0-1000) using drawn area
+    final Offset norm = _widgetToNormalized(localOffset);
+    final double touchX = norm.dx;
+    final double touchY = norm.dy;
 
     // Use API coordinates directly
     final double left = currentBox.x1.toDouble();
@@ -273,7 +257,7 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
     // Define handle range in normalized coordinates
     const double handleRange = 30.0;
     // Convert handle range to API coordinates
-    final double scaledHandleRange = handleRange * 1000 / _imageWidth;
+    final double scaledHandleRange = handleRange; // already in normalized units
 
     if ((touchX - left).abs() < scaledHandleRange &&
         (touchY - top).abs() < scaledHandleRange) {
@@ -304,21 +288,14 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
         _isDraggingBox)) {
       return;
     }
-
     final RenderBox box = context.findRenderObject() as RenderBox;
     final Offset localOffset = box.globalToLocal(details.globalPosition);
-
-    // Calculate delta from start position in screen pixels
-    final double dx = localOffset.dx - _dragStartOffset.dx;
-    final double dy = localOffset.dy - _dragStartOffset.dy;
-
-    // Convert pixel movement to API coordinates (0-1000 range)
-    final double scaledDx = dx * 1000 / _imageWidth;
-    final double scaledDy = dy * 1000 / _imageHeight;
-
+    final Offset startNorm = _widgetToNormalized(_dragStartOffset);
+    final Offset currNorm = _widgetToNormalized(localOffset);
+    final double scaledDx = currNorm.dx - startNorm.dx;
+    final double scaledDy = currNorm.dy - startNorm.dy;
     setState(() {
       if (_isDraggingBox) {
-        // Move the entire box
         _currentBoundingBox = BoundingBox(
           x1: (_originalBox.x1 + scaledDx).round().clamp(0, 1000),
           y1: (_originalBox.y1 + scaledDy).round().clamp(0, 1000),
@@ -326,12 +303,10 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
           y2: (_originalBox.y2 + scaledDy).round().clamp(0, 1000),
         );
       } else {
-        // Resize the box based on which handle is being dragged
         int newX1 = _originalBox.x1;
         int newY1 = _originalBox.y1;
         int newX2 = _originalBox.x2;
         int newY2 = _originalBox.y2;
-
         if (_isDraggingTopLeft) {
           newX1 = (_originalBox.x1 + scaledDx)
               .round()
@@ -361,7 +336,6 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
               .round()
               .clamp(_originalBox.y1 + 10, 1000);
         }
-
         _currentBoundingBox = BoundingBox(
           x1: newX1,
           y1: newY1,
@@ -382,43 +356,101 @@ class _BoundingBoxSelectorState extends State<BoundingBoxSelector> {
     _isDraggingBottomRight = false;
     _isDraggingBox = false;
   }
-}
 
-class BoundingBoxClipper extends CustomClipper<Path> {
-  // These values are in API coordinates (0-1000 range)
-  final double left;
-  final double top;
-  final double width;
-  final double height;
-  final double imageWidth;
-  final double imageHeight;
+  Widget _buildBoundingBoxOverlay() {
+    if (_currentBoundingBox == null) {
+      return Container();
+    }
 
-  BoundingBoxClipper({
-    required this.left,
-    required this.top,
-    required this.width,
-    required this.height,
-    required this.imageWidth,
-    required this.imageHeight,
-  });
+    final box = _currentBoundingBox!;
+    final Offset topLeft =
+        _normalizedToWidget(box.x1.toDouble(), box.y1.toDouble());
+    final Offset bottomRight =
+        _normalizedToWidget(box.x2.toDouble(), box.y2.toDouble());
+    final double left = topLeft.dx;
+    final double top = topLeft.dy;
+    final double width = bottomRight.dx - topLeft.dx;
+    final double height = bottomRight.dy - topLeft.dy;
 
-  @override
-  Path getClip(Size size) {
-    // Convert API coordinates (0-1000) to screen pixels for drawing
-    final scaledLeft = left * imageWidth / 1000;
-    final scaledTop = top * imageHeight / 1000;
-    final scaledWidth = width * imageWidth / 1000;
-    final scaledHeight = height * imageHeight / 1000;
-
-    return Path.combine(
-      PathOperation.difference,
-      Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
-      Path()
-        ..addRect(
-            Rect.fromLTWH(scaledLeft, scaledTop, scaledWidth, scaledHeight)),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _OverlayPainter(
+              left: left,
+              top: top,
+              width: width,
+              height: height,
+            ),
+          ),
+        ),
+        Positioned(
+          left: left,
+          top: top,
+          width: width,
+          height: height,
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: Colors.red,
+                width: 3,
+              ),
+            ),
+            child: _isEditing
+                ? Stack(
+                    children: [
+                      _buildResizeHandle(Alignment.topLeft),
+                      _buildResizeHandle(Alignment.topRight),
+                      _buildResizeHandle(Alignment.bottomLeft),
+                      _buildResizeHandle(Alignment.bottomRight),
+                    ],
+                  )
+                : null,
+          ),
+        ),
+      ],
     );
   }
 
+  Widget _buildResizeHandle(Alignment alignment) {
+    return Align(
+      alignment: alignment,
+      child: Container(
+        width: 24, // Handle size in screen pixels - slightly larger
+        height: 24,
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.7),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+      ),
+    );
+  }
+}
+
+// Add a custom painter for the overlay
+class _OverlayPainter extends CustomPainter {
+  final double left, top, width, height;
+  _OverlayPainter(
+      {required this.left,
+      required this.top,
+      required this.width,
+      required this.height});
   @override
-  bool shouldReclip(CustomClipper<Path> oldClipper) => true;
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black.withOpacity(0.5)
+      ..style = PaintingStyle.fill;
+    // Draw overlay with a transparent rectangle for the bounding box
+    final rect = Rect.fromLTWH(left, top, width, height);
+    final path = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height)),
+      Path()..addRect(rect),
+    );
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
