@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../models/detection_model.dart';
 import '../widgets/bounding_box_selector.dart';
 import '../utils/image_utils.dart';
+import '../services/vectorize_service.dart';
 
 class ResultScreen extends StatefulWidget {
   final String imagePath;
@@ -24,6 +26,8 @@ class _ResultScreenState extends State<ResultScreen> {
   String? _croppedImagePath;
   bool _isLoading = false;
   bool _isManualSelection = false;
+  String? _vectorizedSvgString; // Holds SVG response
+  bool _isVectorizing = false;
 
   @override
   void initState() {
@@ -88,7 +92,9 @@ class _ResultScreenState extends State<ResultScreen> {
               children: [
                 Expanded(
                   child: _showCroppedImage
-                      ? _buildCroppedImageView()
+                      ? _vectorizedSvgString != null
+                          ? _buildSvgView()
+                          : _buildCroppedImageView()
                       : BoundingBoxSelector(
                           imagePath: widget.imagePath,
                           detections: widget.detections,
@@ -96,15 +102,30 @@ class _ResultScreenState extends State<ResultScreen> {
                           onBoundingBoxChanged: (box) {
                             setState(() {
                               _currentBoundingBox = box;
-                              // Reset cropped image when box changes
                               if (_croppedImagePath != null) {
                                 _croppedImagePath = null;
                                 _showCroppedImage = false;
+                                _vectorizedSvgString = null;
                               }
                             });
                           },
                         ),
                 ),
+                if (_showCroppedImage && _vectorizedSvgString == null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: ElevatedButton.icon(
+                      icon: _isVectorizing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.auto_awesome),
+                      label: const Text('Vectorize'),
+                      onPressed: _isVectorizing ? null : _vectorizeImage,
+                    ),
+                  ),
                 _buildInfoPanel(),
               ],
             ),
@@ -132,6 +153,28 @@ class _ResultScreenState extends State<ResultScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildSvgView() {
+    // Requires flutter_svg in pubspec.yaml
+    return _vectorizedSvgString == null
+        ? const SizedBox.shrink()
+        : Container(
+            color: Colors.white,
+            child: Center(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: SvgPicture.string(
+                    _vectorizedSvgString!,
+                    width: 300,
+                    height: 300,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          );
   }
 
   Widget _buildInfoPanel() {
@@ -255,6 +298,28 @@ class _ResultScreenState extends State<ResultScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _vectorizeImage() async {
+    if (_croppedImagePath == null) return;
+    setState(() {
+      _isVectorizing = true;
+    });
+    try {
+      final file = File(_croppedImagePath!);
+      final svgString = await VectorizeService.vectorizeImage(file);
+      setState(() {
+        _vectorizedSvgString = svgString;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() {
+        _isVectorizing = false;
+      });
     }
   }
 
