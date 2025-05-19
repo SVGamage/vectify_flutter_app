@@ -120,11 +120,6 @@ class _LogoDetectionScreenState extends State<LogoDetectionScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          if (!isManual)
-            Text(
-              'Confidence: ${(detection.confidence * 100).toStringAsFixed(2)}%',
-              style: const TextStyle(fontSize: 16),
-            ),
           if (isManual)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
