@@ -218,8 +218,17 @@ class _VectorizedSvgScreenState extends State<VectorizedSvgScreen> {
     });
 
     try {
-      // Get the documents directory
-      final directory = await getApplicationDocumentsDirectory();
+      // First try to use Downloads directory, fall back to Documents if not available
+      Directory? directory;
+      try {
+        directory = await getDownloadsDirectory();
+      } catch (e) {
+        // If getDownloadsDirectory throws an error, we'll use the app documents directory
+      }
+
+      // Fall back to app documents directory if Downloads not available
+      directory ??= await getApplicationDocumentsDirectory();
+
       final fileName =
           'vectorized_logo_${DateTime.now().millisecondsSinceEpoch}.svg';
       final filePath = '${directory.path}/$fileName';
@@ -232,12 +241,17 @@ class _VectorizedSvgScreenState extends State<VectorizedSvgScreen> {
         _savedFilePath = filePath;
         _isSaving = false;
       });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('SVG saved to: $filePath'),
-            backgroundColor: Colors.green,
+            backgroundColor: Theme.of(context).colorScheme.tertiary,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'OK',
+              onPressed: () {},
+              textColor: Theme.of(context).colorScheme.onTertiary,
+            ),
           ),
         );
       }
@@ -245,12 +259,17 @@ class _VectorizedSvgScreenState extends State<VectorizedSvgScreen> {
       setState(() {
         _isSaving = false;
       });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error saving SVG: $e'),
-            backgroundColor: Colors.red,
+            content: Text('Error saving SVG: ${e.toString()}'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Dismiss',
+              onPressed: () {},
+              textColor: Theme.of(context).colorScheme.onError,
+            ),
           ),
         );
       }
@@ -263,29 +282,26 @@ class _VectorizedSvgScreenState extends State<VectorizedSvgScreen> {
     });
 
     try {
-      // First save the file if not already saved
+      // Always create a temporary file for sharing
+      // This ensures we have a fresh file and valid path
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName =
+          'vectorized_logo_${DateTime.now().millisecondsSinceEpoch}.svg';
+      final filePath = '${directory.path}/$fileName';
+
+      // Write the SVG content to file
+      final file = File(filePath);
+      await file.writeAsString(widget.svgString);
+
+      // Update saved path if we don't have one yet
       if (_savedFilePath == null) {
-        final directory = await getApplicationDocumentsDirectory();
-        final fileName =
-            'vectorized_logo_${DateTime.now().millisecondsSinceEpoch}.svg';
-        final filePath = '${directory.path}/$fileName';
-
-        final file = File(filePath);
-        await file.writeAsString(widget.svgString);
-
         _savedFilePath = filePath;
-      }
-
-      // Share the file
+      } // Share the file using XFile
       await Share.shareXFiles(
-        [XFile(_savedFilePath!)],
+        [XFile(file.path)],
         text: 'My Vectorized Logo',
       );
 
-      setState(() {
-        _isSaving = false;
-      });
-    } catch (e) {
       setState(() {
         _isSaving = false;
       });
@@ -293,8 +309,27 @@ class _VectorizedSvgScreenState extends State<VectorizedSvgScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error sharing SVG: $e'),
-            backgroundColor: Colors.red,
+            content: const Text('SVG file shared successfully'),
+            backgroundColor: Theme.of(context).colorScheme.tertiary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isSaving = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error sharing SVG: ${e.toString()}'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Dismiss',
+              onPressed: () {},
+              textColor: Theme.of(context).colorScheme.onError,
+            ),
           ),
         );
       }
